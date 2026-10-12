@@ -1,0 +1,197 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign & Spell - Live Sign Checker</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px 16px;
+      text-align: center;
+      font-family: Arial, sans-serif;
+      background: #fff8ed;
+      color: #30304d;
+    }
+
+    .card {
+      max-width: 480px;
+      margin: auto;
+      padding: 24px;
+      background: white;
+      border-radius: 24px;
+      box-shadow: 0 5px 20px #30304d18;
+    }
+
+    h1 { color: #6956b8; margin-top: 0; }
+    h2 { color: #ed8d63; }
+
+    button {
+      background: #6956b8;
+      color: white;
+      border: none;
+      border-radius: 14px;
+      padding: 14px 22px;
+      margin: 8px 4px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled { opacity: .55; }
+
+    #camera {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      margin: 16px auto;
+    }
+
+    #camera canvas {
+      width: 100%;
+      max-width: 320px;
+      height: auto;
+      border-radius: 16px;
+    }
+
+    #letter {
+      font-size: 56px;
+      font-weight: bold;
+      color: #6956b8;
+      margin: 12px;
+    }
+
+    #status, #details {
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    #status { min-height: 48px; }
+  </style>
+</head>
+
+<body>
+  <main class="card">
+    <h1>Sign &amp; Spell</h1>
+    <h2>Live Sign Checker</h2>
+    <p>Practice your ASL letters A, C, and T!</p>
+    <p>Hold one sign in front of the camera.</p>
+
+    <div id="camera"></div>
+
+    <div id="letter">?</div>
+    <p id="status">Press Start Camera to begin.</p>
+    <p id="details"></p>
+
+    <button id="start" onclick="startCamera()">
+      Start Camera
+    </button>
+    <button onclick="startCamera()">Try Again</button>
+  </main>
+
+  <script>
+    const MODEL_URL =
+      "https://teachablemachine.withgoogle.com/models/h9F1GmteX/";
+
+    let model;
+    let webcam;
+    let running = false;
+    let starting = false;
+
+    async function startCamera() {
+      if (starting || running) return;
+
+      starting = true;
+      const startButton = document.getElementById("start");
+      startButton.disabled = true;
+
+      document.getElementById("status").textContent =
+        "Loading your AI model and camera...";
+      document.getElementById("details").textContent = "";
+
+      try {
+        if (!window.isSecureContext) {
+          throw new Error(
+            "This page needs HTTPS. Open the published GitHub Pages link."
+          );
+        }
+
+        if (!navigator.mediaDevices ||
+            !navigator.mediaDevices.getUserMedia) {
+          throw new Error(
+            "Camera access is unavailable in this browser or Web Viewer. Try opening this HTTPS page directly in Chrome."
+          );
+        }
+
+        if (!model) {
+          model = await tmImage.load(
+            MODEL_URL + "model.json",
+            MODEL_URL + "metadata.json"
+          );
+        }
+
+        webcam = new tmImage.Webcam(320, 320, true);
+        await webcam.setup();
+        await webcam.play();
+
+        document.getElementById("camera").replaceChildren(webcam.canvas);
+
+        running = true;
+        document.getElementById("status").textContent =
+          "Camera is on! Hold up an ASL sign.";
+        startButton.textContent = "Camera Started";
+
+        predictLoop();
+      } catch (error) {
+        document.getElementById("status").textContent =
+          "Setup needs attention: " + error.message;
+        startButton.disabled = false;
+      } finally {
+        starting = false;
+      }
+    }
+
+    async function predictLoop() {
+      if (!running) return;
+
+      try {
+        webcam.update();
+        const predictions = await model.predict(webcam.canvas);
+
+        predictions.sort((a, b) => b.probability - a.probability);
+        const best = predictions[0];
+        const confidence = best.probability;
+
+        document.getElementById("details").textContent =
+          "Model prediction: " + best.className +
+          " · Confidence: " + (confidence * 100).toFixed(1) + "%";
+
+        if (confidence < 0.70) {
+          document.getElementById("letter").textContent = "?";
+          document.getElementById("status").textContent =
+            "Not sure yet. Try better lighting and hold your hand still.";
+        } else {
+          document.getElementById("letter").textContent = best.className;
+          document.getElementById("status").textContent =
+            "The model predicts: " + best.className;
+        }
+      } catch (error) {
+        running = false;
+        document.getElementById("status").textContent =
+          "Prediction error: " + error.message;
+        document.getElementById("start").disabled = false;
+        return;
+      }
+
+      if (running) requestAnimationFrame(predictLoop);
+    }
+  </script>
+</body>
+</html>
